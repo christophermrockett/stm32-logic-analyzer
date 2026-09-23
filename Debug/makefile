@@ -64,8 +64,8 @@ all: main-build
 main-build: STM32_LogicAnalyzer.elf secondary-outputs
 
 # Tool invocations
-STM32_LogicAnalyzer.elf STM32_LogicAnalyzer.map: $(OBJS) $(USER_OBJS) C:\Users\crock\Documents\Projects\STM32_LogicAnalyzer\STM32_LogicAnalyzer\STM32H723ZGTX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
-	arm-none-eabi-gcc -o "STM32_LogicAnalyzer.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m7 -T"C:\Users\crock\Documents\Projects\STM32_LogicAnalyzer\STM32_LogicAnalyzer\STM32H723ZGTX_FLASH.ld" --specs=nosys.specs -Wl,-Map="STM32_LogicAnalyzer.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+STM32_LogicAnalyzer.elf STM32_LogicAnalyzer.map: $(OBJS) $(USER_OBJS) C:\Users\crock\Documents\Projects\STM32_LogicAnalyzer\STM32H723ZGTX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
+	arm-none-eabi-gcc -o "STM32_LogicAnalyzer.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m7 -T"C:\Users\crock\Documents\Projects\STM32_LogicAnalyzer\STM32H723ZGTX_FLASH.ld" --specs=nosys.specs -Wl,-Map="STM32_LogicAnalyzer.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
 	@echo 'Finished building target: $@'
 	@echo ' '
 

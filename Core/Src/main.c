@@ -33,7 +33,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-
+#define SAMPLE_COUNT 10
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -44,14 +44,16 @@
 /* Private variables ---------------------------------------------------------*/
 
 TIM_HandleTypeDef htim1;
+DMA_HandleTypeDef hdma_tim1_up;
 
 /* USER CODE BEGIN PV */
 
 // Take 1000 samples of clocked input
-uint8_t sample[1000];
-uint32_t sample_index = 0;
+//uint8_t sample[1000];
+uint32_t sample[SAMPLE_COUNT];
+uint8_t channels[SAMPLE_COUNT];
 
-uint8_t capture_done = 0;
+volatile uint8_t capture_done = 0;
 
 /* USER CODE END PV */
 
@@ -59,25 +61,10 @@ uint8_t capture_done = 0;
 void SystemClock_Config(void);
 static void MPU_Config(void);
 static void MX_GPIO_Init(void);
+static void MX_DMA_Init(void);
 static void MX_TIM1_Init(void);
 /* USER CODE BEGIN PFP */
-// Return 8-bit value from GPIO inputs
-uint8_t ReadSample(void) {
-
-	uint8_t value = 0;
-
-	  // Save 8-bit value for each sample up to 1000, shift then or together for one full sample
-	  value |= HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0) <<0;
-	  value |= HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_1) <<1;
-	  value |= HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_2) <<2;
-	  value |= HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_3) <<3;
-	  value |= HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_4) <<4;
-	  value |= HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_5) <<5;
-	  value |= HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_6) <<6;
-	  value |= HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_7) <<7;
-
-	return value;
-}
+void DMATransferComplete(DMA_HandleTypeDef *hdma);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -117,15 +104,20 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+  MX_DMA_Init();
   MX_TIM1_Init();
   MX_USB_DEVICE_Init();
   /* USER CODE BEGIN 2 */
-  // Start TIM1
-  HAL_TIM_Base_Start_IT(&htim1);
+
+  HAL_DMA_RegisterCallback(&hdma_tim1_up, HAL_DMA_XFER_CPLT_CB_ID, &DMATransferComplete);
+  TIM1->DIER |= TIM_DIER_UDE;
+  HAL_DMA_Start_IT(&hdma_tim1_up, (uint32_t) &(GPIOA->IDR), (uint32_t) sample, SAMPLE_COUNT);
+  HAL_TIM_Base_Start(&htim1);
 
   /* USER CODE END 2 */
 
   /* Infinite loop */
+
   /* USER CODE BEGIN WHILE */
   // Can't make 1-bit uint
   // ------------------------------------------------------------ Variables for GPIO Testing ----------------------------------------
@@ -136,34 +128,18 @@ int main(void)
 //  while (sample_index < 1000)
   while (1)
   {
-	  // --------------------------------------------------------- Beginning GPIO Testing ------------------------------------------
-//	  value = 0;
-//	  // Save 8-bit value for each sample up to 1000, shift then or together for one full sample
-//	  value |= HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0) <<0;
-//	  value |= HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_1) <<1;
-//	  value |= HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_2) <<2;
-//	  value |= HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_3) <<3;
-//	  value |= HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_4) <<4;
-//	  value |= HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_5) <<5;
-//	  value |= HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_6) <<6;
-//	  value |= HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_7) <<7;
-//
-//	  sample[sample_index] = value;
-//
-//	  // Delete for LED  on dev boarrd
-//	  HAL_GPIO_WritePin(GPIOG, GPIO_PIN_7, (value != 0x80)? GPIO_PIN_RESET : GPIO_PIN_SET);
-//
-//	  HAL_Delay(1000);
-//
-//	  sample_index++;
-// ---------------------------------------------------------------------------------------------------------------------------------------
 
 	  if (capture_done) {
-		  HAL_Delay(1000);
-		  CDC_Transmit_HS(sample, 1000);
 
 		  capture_done = 0;
+
+		  for (int i = 0; i < SAMPLE_COUNT; i++){
+			  // And to get only first 8-bits for 8 channels
+			  channels[i] = sample[i] & 0xFF;
+		  }
 	  }
+
+
 
     /* USER CODE END WHILE */
 
@@ -271,6 +247,22 @@ static void MX_TIM1_Init(void)
 }
 
 /**
+  * Enable DMA controller clock
+  */
+static void MX_DMA_Init(void)
+{
+
+  /* DMA controller clock enable */
+  __HAL_RCC_DMA1_CLK_ENABLE();
+
+  /* DMA interrupt init */
+  /* DMA1_Stream0_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Stream0_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Stream0_IRQn);
+
+}
+
+/**
   * @brief GPIO Initialization Function
   * @param None
   * @retval None
@@ -310,19 +302,15 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
-// Automatically called with STM32 interrupt system
-void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
-	// Guarantees TIM1 callback interrupt instead of other interrupts
-	// Get instance section in htim address
-	if (htim->Instance == TIM1) {
-		sample[sample_index] = ReadSample();
-		sample_index++;
+void DMATransferComplete(DMA_HandleTypeDef *hdma) {
 
-		if (sample_index >= 1000) {
-			HAL_TIM_Base_Stop_IT(&htim1);
-			capture_done = 1;
-		}
-	}
+	// Disable DMA mode
+	TIM1->DIER &= ~TIM_DIER_UDE;
+
+	capture_done = 1;
+
+	// Toggle LED
+	HAL_GPIO_TogglePin(GPIOG, GPIO_PIN_7);
 }
 /* USER CODE END 4 */
 
